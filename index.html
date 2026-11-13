@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compilador APK</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #f5f5f7; color: #111; }
+  h1 { font-size: 22px; margin: 8px 0 16px; }
+  label { display: block; font-size: 14px; margin-top: 12px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; margin-top: 4px; border: 1px solid #ccc; border-radius: 8px; }
+  button { width: 100%; margin-top: 20px; padding: 14px; font-size: 16px; border: none; border-radius: 10px; background: #2563eb; color: #fff; }
+  button:disabled { background: #9ca3af; }
+  #estado { margin-top: 16px; font-size: 15px; white-space: pre-wrap; }
+  a { color: #2563eb; }
+  small { color: #555; }
+</style>
+</head>
+<body>
+<h1>Compilador de APK</h1>
+
+<label>Usuario de GitHub
+  <input id="owner" placeholder="tu-usuario">
+</label>
+<label>Repositorio (debe existir y estar vacío o con el workflow)
+  <input id="repo" placeholder="mis-apps-build">
+</label>
+<label>Token de GitHub (permiso Contents: Read and write)
+  <input id="token" type="password" placeholder="github_pat_...">
+</label>
+<label>Archivo zip del proyecto
+  <input id="zip" type="file" accept=".zip">
+</label>
+
+<button id="subir">Subir y compilar</button>
+<div id="estado"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function aBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binario = "";
+  const trozo = 0x8000;
+  for (let i = 0; i < bytes.length; i += trozo) {
+    binario += String.fromCharCode.apply(null, bytes.subarray(i, i + trozo));
+  }
+  return btoa(binario);
+}
+
+$("subir").addEventListener("click", async () => {
+  const owner = $("owner").value.trim();
+  const repo = $("repo").value.trim();
+  const token = $("token").value.trim();
+  const file = $("zip").files[0];
+  const estado = $("estado");
+
+  if (!owner || !repo || !token || !file) {
+    estado.textContent = "Completa usuario, repositorio, token y elige un zip.";
+    return;
+  }
+
+  const boton = $("subir");
+  boton.disabled = true;
+  estado.textContent = "Leyendo el zip...";
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const contenido = aBase64(buffer);
+    const nombre = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const ruta = `inbox/${Date.now()}-${nombre}`;
+
+    estado.textContent = "Subiendo a GitHub...";
+    const respuesta = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${ruta}`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ message: `Compilar ${nombre}`, content: contenido })
+    });
+
+    if (!respuesta.ok) {
+      const detalle = await respuesta.text();
+      throw new Error(`GitHub respondió ${respuesta.status}: ${detalle}`);
+    }
+
+    const url = `https://github.com/${owner}/${repo}/actions`;
+    estado.innerHTML = `Listo. La compilación empezó (tarda 10 a 20 min).<br><br>Sigue el avance y descarga el APK en: <a href="${url}" target="_blank">${url}</a>`;
+  } catch (error) {
+    estado.textContent = "Error: " + error.message;
+  } finally {
+    boton.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
